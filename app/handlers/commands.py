@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from html import escape
+
 from aiogram import Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message
 
 from app.config import Settings
+from app.models.campaign import Campaign
 from app.services.campaigns import CampaignsRegistry
 from app.services.state import State
 
@@ -16,7 +19,7 @@ WELCOME = (
     "Gửi ảnh chụp giao dịch cho bot, dữ liệu sẽ tự đẩy vào Google Sheet "
     "của chiến dịch.\n\n"
     "Bắt đầu:\n"
-    "• <code>/campaign &lt;tên&gt;</code> — chọn chiến dịch trước khi gửi ảnh\n"
+    "• <code>/campaign TÊN</code> — chọn chiến dịch (ví dụ: <code>/campaign msb</code>)\n"
     "• Gửi screenshot — bot sẽ OCR và ghi sheet\n"
     "• <code>/today</code> — xem số upload hôm nay\n"
     "• <code>/help</code> — danh sách lệnh"
@@ -24,7 +27,7 @@ WELCOME = (
 
 HELP = (
     "<b>Các lệnh</b>\n"
-    "• <code>/campaign &lt;tên&gt;</code> — set chiến dịch hiện tại\n"
+    "• <code>/campaign TÊN</code> — set chiến dịch hiện tại\n"
     "• <code>/campaign</code> — xem chiến dịch đang chọn + danh sách active\n"
     "• <code>/today</code> — số upload hôm nay\n"
     "• <code>/help</code> — bảng này\n"
@@ -32,6 +35,27 @@ HELP = (
     "<b>Cho admin</b>\n"
     "• <code>/reload</code> — nạp lại danh sách chiến dịch từ control sheet"
 )
+
+
+def _sheet_link(sheet_id: str) -> str:
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+
+
+def _format_campaign_destination(camp: Campaign) -> str:
+    name = escape(camp.name)
+    worksheet = escape(camp.worksheet)
+    return (
+        f"✓ Đã chọn chiến dịch <b>{name}</b>.\n\n"
+        f"📄 Dữ liệu sẽ ghi vào: "
+        f"<a href=\"{_sheet_link(camp.sheet_id)}\">Google Sheet</a> "
+        f"(tab <code>{worksheet}</code>)"
+    )
+
+
+def _format_active_list(active: list[Campaign]) -> str:
+    if not active:
+        return "<i>(chưa có chiến dịch nào active — admin cần thêm vào control sheet)</i>"
+    return "\n".join(f"• <code>{escape(c.name)}</code>" for c in sorted(active, key=lambda c: c.name))
 
 
 @router.message(CommandStart())
@@ -55,38 +79,45 @@ async def cmd_campaign(
     user_id = message.from_user.id
 
     active = await campaigns.list_active()
-    active_names = sorted(c.name for c in active)
-    active_list = (
-        "\n".join(f"• <code>{n}</code>" for n in active_names)
-        if active_names
-        else "<i>(chưa có chiến dịch nào active)</i>"
-    )
+    active_list = _format_active_list(active)
 
-    arg = (command.args or "").strip()
-    if not arg:
+    arg_raw = (command.args or "").strip()
+    if not arg_raw:
         current = await state.get_campaign(user_id)
-        current_line = (
-            f"Chiến dịch hiện tại: <b>{current}</b>"
-            if current
-            else "Bạn chưa chọn chiến dịch."
-        )
+        if current:
+            current_camp = await campaigns.get(current)
+            if current_camp is not None:
+                current_block = _format_campaign_destination(current_camp)
+            else:
+                current_block = (
+                    f"Chiến dịch hiện tại: <b>{escape(current)}</b> "
+                    "<i>(không còn active)</i>"
+                )
+        else:
+            current_block = "Bạn chưa chọn chiến dịch."
         await message.answer(
-            f"{current_line}\n\nDùng <code>/campaign &lt;tên&gt;</code>. "
-            f"Danh sách:\n{active_list}"
+            f"{current_block}\n\nDùng <code>/campaign TÊN</code>. Danh sách active:\n{active_list}",
+            disable_web_page_preview=True,
         )
         return
 
-    name = arg.split()[0]
+    # Be forgiving: strip surrounding angle brackets / quotes the user may have
+    # copied from the help text placeholder.
+    name = arg_raw.split()[0].strip("<>\"'`")
+    if not name:
+        await message.answer("Tên chiến dịch không hợp lệ. Ví dụ: <code>/campaign msb</code>")
+        return
+
     camp = await campaigns.get(name)
     if camp is None:
         await message.answer(
-            f"Không thấy chiến dịch <code>{name}</code> (hoặc đang inactive).\n\n"
-            f"Active:\n{active_list}"
+            f"Không thấy chiến dịch <code>{escape(name)}</code> "
+            "(hoặc đang inactive).\n\nActive:\n" + active_list
         )
         return
 
     await state.set_campaign(user_id, camp.name)
-    await message.answer(f"✓ Đã chọn chiến dịch <b>{camp.name}</b>.")
+    await message.answer(_format_campaign_destination(camp), disable_web_page_preview=True)
 
 
 @router.message(Command("today"))
@@ -114,6 +145,6 @@ async def cmd_reload(
     try:
         n = await campaigns.reload()
     except Exception as exc:  # noqa: BLE001
-        await message.answer(f"✗ Reload lỗi: <code>{exc}</code>")
+        await message.answer(f"✗ Reload lỗi: <code>{escape(str(exc))}</code>")
         return
     await message.answer(f"✓ Đã reload. <b>{n}</b> chiến dịch active.")
