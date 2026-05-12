@@ -145,6 +145,9 @@ async def cmd_reload(
     try:
         n = await campaigns.reload()
     except Exception as exc:  # noqa: BLE001
-        await message.answer(f"✗ Reload lỗi: <code>{escape(str(exc))}</code>")
+        await message.answer(
+            f"✗ Reload lỗi: <code>{escape(type(exc).__name__)}: "
+            f"{escape(str(exc) or '(no message)')}</code>"
+        )
         return
     await message.answer(f"✓ Đã reload. <b>{n}</b> chiến dịch active.")

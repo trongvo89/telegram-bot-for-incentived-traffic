@@ -66,7 +66,11 @@ async def run() -> None:
         try:
             await campaigns.reload()
         except Exception as exc:  # noqa: BLE001
-            log.warning("campaigns_initial_load_failed", error=str(exc))
+            log.warning(
+                "campaigns_initial_load_failed",
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
     else:
         log.warning(
             "campaigns_disabled",
