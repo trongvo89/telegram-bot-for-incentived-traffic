@@ -29,7 +29,18 @@ async def run() -> None:
         except Exception as exc:  # noqa: BLE001
             log.warning("campaigns_initial_load_failed", error=str(exc))
     else:
-        log.warning("campaigns_disabled — CONTROL_SHEET_ID or credentials missing")
+        log.warning(
+            "campaigns_disabled",
+            control_sheet_id_set=bool(settings.control_sheet_id),
+            credentials_path=str(settings.google_application_credentials)
+            if settings.google_application_credentials
+            else None,
+            credentials_file_exists=(
+                settings.google_application_credentials.exists()
+                if settings.google_application_credentials
+                else False
+            ),
+        )
 
     bot = create_bot(settings)
     dp = create_dispatcher()

@@ -23,7 +23,6 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 RUN mkdir -p /data /app/secrets
 
 ENV SQLITE_PATH=/data/app.db
-ENV GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/sa.json
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "-m", "app.main"]

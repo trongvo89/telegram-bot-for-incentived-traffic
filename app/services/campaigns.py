@@ -42,7 +42,9 @@ class CampaignsRegistry:
 
     @property
     def enabled(self) -> bool:
-        return bool(self._control_sheet_id and self._credentials_path)
+        if not self._control_sheet_id or not self._credentials_path:
+            return False
+        return self._credentials_path.exists()
 
     def _build_client(self) -> gspread.Client:
         if self._client is not None:
