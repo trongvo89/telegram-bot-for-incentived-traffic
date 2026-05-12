@@ -6,9 +6,13 @@ from pathlib import Path
 
 from app.bot import create_bot, create_dispatcher
 from app.config import load_settings
-from app.handlers import commands_router, register_error_handler
+from app.handlers import commands_router, photo_router, register_error_handler
 from app.services.campaigns import CampaignsRegistry
+from app.services.notifier import Notifier
+from app.services.ocr import VisionOCRClient
+from app.services.sheets import SheetsWriter
 from app.services.state import State
+from app.services.storage import ChannelStorage
 from app.utils.logging import configure_logging, get_logger
 
 
@@ -87,20 +91,43 @@ async def run() -> None:
 
     bot = create_bot(settings)
     dp = create_dispatcher()
+
+    storage = ChannelStorage()
+    ocr = VisionOCRClient(settings.google_application_credentials)
+    sheets = SheetsWriter(
+        credentials_path=settings.google_application_credentials,
+        state=state,
+    )
+    await sheets.start()
+    notifier = Notifier(bot)
+
     dp["settings"] = settings
     dp["state"] = state
     dp["campaigns"] = campaigns
+    dp["storage"] = storage
+    dp["ocr"] = ocr
+    dp["sheets"] = sheets
+    dp["notifier"] = notifier
 
     register_error_handler(dp)
     dp.include_router(commands_router)
+    dp.include_router(photo_router)
 
     me = await bot.get_me()
-    log.info("bot_started", username=me.username, id=me.id)
+    log.info(
+        "bot_started",
+        username=me.username,
+        id=me.id,
+        sheets_enabled=sheets.enabled,
+        ocr_enabled=ocr.enabled,
+        campaigns_enabled=campaigns.enabled,
+    )
 
     try:
         await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        await sheets.stop()
         await state.close()
         await bot.session.close()
 

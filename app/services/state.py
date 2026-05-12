@@ -118,3 +118,26 @@ class State:
         )
         await self._conn.commit()
         return cur.lastrowid or 0
+
+    async def list_dead_letter(self, limit: int = 10, *, only_unresolved: bool = True) -> list[dict]:
+        assert self._conn is not None
+        sql = (
+            "SELECT id, reason, created_at, resolved FROM dead_letter "
+            + ("WHERE resolved = 0 " if only_unresolved else "")
+            + "ORDER BY id DESC LIMIT ?"
+        )
+        async with self._conn.execute(sql, (limit,)) as cur:
+            rows = await cur.fetchall()
+        return [
+            {"id": r[0], "reason": r[1], "created_at": r[2], "resolved": r[3]}
+            for r in rows
+        ]
+
+    async def resolve_dead_letter(self, dl_id: int) -> bool:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "UPDATE dead_letter SET resolved = 1 WHERE id = ?",
+            (dl_id,),
+        )
+        await self._conn.commit()
+        return (cur.rowcount or 0) > 0

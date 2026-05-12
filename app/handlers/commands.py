@@ -33,7 +33,9 @@ HELP = (
     "• <code>/help</code> — bảng này\n"
     "\n"
     "<b>Cho admin</b>\n"
-    "• <code>/reload</code> — nạp lại danh sách chiến dịch từ control sheet"
+    "• <code>/reload</code> — nạp lại danh sách chiến dịch từ control sheet\n"
+    "• <code>/deadletter</code> — xem 10 lỗi gần nhất\n"
+    "• <code>/resolve ID</code> — đánh dấu dead-letter đã xử lý"
 )
 
 
@@ -151,3 +153,47 @@ async def cmd_reload(
         )
         return
     await message.answer(f"✓ Đã reload. <b>{n}</b> chiến dịch active.")
+
+
+@router.message(Command("deadletter"))
+async def cmd_deadletter(message: Message, settings: Settings, state: State) -> None:
+    assert message.from_user is not None
+    if message.from_user.id not in settings.super_admin_ids:
+        await message.answer("⛔ Lệnh này chỉ dành cho super admin.")
+        return
+    items = await state.list_dead_letter(limit=10, only_unresolved=True)
+    if not items:
+        await message.answer("✓ Không có dead-letter chưa xử lý.")
+        return
+    lines = ["<b>Dead-letter chưa xử lý (mới nhất trước):</b>"]
+    for it in items:
+        lines.append(
+            f"• <code>#{it['id']}</code> {escape(str(it['created_at']))} — "
+            f"<code>{escape(str(it['reason']))[:200]}</code>"
+        )
+    lines.append("\nDùng <code>/resolve ID</code> để đánh dấu đã xử lý.")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("resolve"))
+async def cmd_resolve(
+    message: Message,
+    command: CommandObject,
+    settings: Settings,
+    state: State,
+) -> None:
+    assert message.from_user is not None
+    if message.from_user.id not in settings.super_admin_ids:
+        await message.answer("⛔ Lệnh này chỉ dành cho super admin.")
+        return
+    arg = (command.args or "").strip()
+    try:
+        dl_id = int(arg)
+    except ValueError:
+        await message.answer("Dùng <code>/resolve ID</code> với ID là số nguyên.")
+        return
+    ok = await state.resolve_dead_letter(dl_id)
+    if ok:
+        await message.answer(f"✓ Đã đánh dấu dead-letter <code>#{dl_id}</code> resolved.")
+    else:
+        await message.answer(f"Không tìm thấy dead-letter <code>#{dl_id}</code>.")
