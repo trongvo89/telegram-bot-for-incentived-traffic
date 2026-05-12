@@ -65,22 +65,22 @@ class CampaignsRegistry:
         # any whitespace/encoding diff). Campaign.from_row already tolerates
         # missing fields, so just take whatever row 1 declares as headers.
         rows = ws.get_all_records()
+        # Read raw row values too — bypasses gspread's header→dict mapping so
+        # we can see if the cell really is empty vs. mis-mapped.
+        try:
+            raw_header = ws.row_values(1)
+            raw_first = ws.row_values(2)
+        except Exception:  # noqa: BLE001
+            raw_header, raw_first = [], []
         log.info(
             "control_sheet_fetched",
             spreadsheet_title=sh.title,
             worksheet=ws.title,
             row_count=len(rows),
             headers=list(rows[0].keys()) if rows else None,
-            first_row_preview=(
-                {
-                    "campaign_name": rows[0].get("campaign_name"),
-                    "active": rows[0].get("active"),
-                    "active_type": type(rows[0].get("active")).__name__,
-                    "sheet_id_set": bool(rows[0].get("sheet_id")),
-                }
-                if rows
-                else None
-            ),
+            raw_header_row=raw_header,
+            raw_first_data_row=raw_first,
+            first_row_dict=rows[0] if rows else None,
         )
         out: dict[str, Campaign] = {}
         skipped = 0
