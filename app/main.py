@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 
 from app.bot import create_bot, create_dispatcher
 from app.config import load_settings
@@ -9,6 +10,29 @@ from app.handlers import commands_router, register_error_handler
 from app.services.campaigns import CampaignsRegistry
 from app.services.state import State
 from app.utils.logging import configure_logging, get_logger
+
+
+def _materialize_sa_json() -> None:
+    """Write the service-account JSON blob from env to disk, then point
+    GOOGLE_APPLICATION_CREDENTIALS at it.
+
+    The same logic exists in docker-entrypoint.sh, but Railway (and some
+    other hosts) override the container ENTRYPOINT when a custom start
+    command is configured. Running this in Python guarantees it happens
+    regardless of how the container is launched.
+    """
+    blob = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if not blob:
+        return
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or "/app/secrets/sa.json"
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(blob)
+    try:
+        p.chmod(0o600)
+    except OSError:
+        pass
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(p)
 
 
 async def run() -> None:
@@ -78,6 +102,7 @@ async def run() -> None:
 
 
 def main() -> None:
+    _materialize_sa_json()
     asyncio.run(run())
 
 
