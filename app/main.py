@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 from app.bot import create_bot, create_dispatcher
 from app.config import load_settings
@@ -14,6 +15,20 @@ async def run() -> None:
     settings = load_settings()
     configure_logging(settings.log_level)
     log = get_logger("main")
+
+    gac_path = settings.google_application_credentials
+    log.info(
+        "creds_diag",
+        control_sheet_id_set=bool(settings.control_sheet_id),
+        gac_env=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
+        gac_json_env_present="GOOGLE_APPLICATION_CREDENTIALS_JSON" in os.environ,
+        gac_json_env_size=len(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "")),
+        gac_path=str(gac_path) if gac_path else None,
+        gac_path_exists=gac_path.exists() if gac_path else False,
+        gac_path_size=(
+            gac_path.stat().st_size if gac_path and gac_path.exists() else None
+        ),
+    )
 
     state = State(db_path=settings.sqlite_path, tz=settings.tz)
     await state.connect()
