@@ -76,3 +76,18 @@ def test_txid_first_capture_group_used() -> None:
     text = "Reference: ABC-XYZ-99988877\n"
     parsed = extract_fields(text, _camp(txid_regex=r"Reference:\s*([A-Z0-9\-]+)"))
     assert parsed.transaction_id == "ABC-XYZ-99988877"
+
+
+def test_phone_not_extracted_from_account_number() -> None:
+    # Real MSB receipt: a 14-digit beneficiary account number sits between
+    # the amount and the name. The phone regex must NOT pluck a 10-digit
+    # subsequence (``0333350830``) out of it.
+    text = (
+        "Số tiền\n"
+        "173,298,132 VND\n"
+        "19033335083012\n"
+        "VO VAN TRONG\n"
+        "Tên tài khoản thụ hưởng\n"
+    )
+    parsed = extract_fields(text, _camp())
+    assert parsed.phone is None

@@ -11,10 +11,15 @@ import re
 #   - optional +84 / 84 / 0 prefix
 #   - 9 digits after the prefix; major carrier prefixes start with 3/5/7/8/9
 #   - allow common separators (space, dot, dash) between groups
+#   - digit boundaries on both sides so we don't pluck a 10-digit subsequence
+#     out of a longer account number (e.g. ``19033335083012`` would otherwise
+#     match ``0333350830``).
 PHONE_VN_REGEX = re.compile(
+    r"(?<!\d)"
     r"(?:(?:\+?84)|0)\s*[\.\-]?\s*"
     r"(?:3|5|7|8|9)\d"
     r"(?:\s*[\.\-]?\s*\d){7}"
+    r"(?!\d)"
 )
 
 
