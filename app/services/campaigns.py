@@ -15,6 +15,14 @@ log = get_logger("services.campaigns")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 WORKSHEET_NAME = "campaigns"
 
+# Invisible characters that sometimes sneak into Google Sheets header cells
+# when users paste from rich-text sources (BOM, ZWSP, ZWNJ, ZWJ, NBSP).
+_INVISIBLE_CHARS = "﻿​‌‍ "
+
+
+def _clean_header(value: str) -> str:
+    return value.strip().strip(_INVISIBLE_CHARS).strip()
+
 
 class CampaignsRegistry:
     """Reads campaigns from a control Google Sheet with TTL cache.
@@ -61,30 +69,29 @@ class CampaignsRegistry:
         client = self._build_client()
         sh = client.open_by_key(self._control_sheet_id)
         ws = sh.worksheet(WORKSHEET_NAME)
-        # gspread 6.x's expected_headers check is overly strict (it raises on
-        # any whitespace/encoding diff). Campaign.from_row already tolerates
-        # missing fields, so just take whatever row 1 declares as headers.
-        rows = ws.get_all_records()
-        # Read raw row values too — bypasses gspread's header→dict mapping so
-        # we can see if the cell really is empty vs. mis-mapped.
-        try:
-            raw_header = ws.row_values(1)
-            raw_first = ws.row_values(2)
-        except Exception:  # noqa: BLE001
-            raw_header, raw_first = [], []
+        # Use get_all_values() instead of get_all_records() so we control the
+        # header→key mapping ourselves. gspread's header keying is brittle:
+        # BOMs, zero-width spaces, or trailing whitespace in row 1 silently
+        # rename the keys and rows look "empty" on lookup.
+        values = ws.get_all_values()
+        raw_header = values[0] if values else []
+        data_rows = values[1:] if len(values) > 1 else []
+        # Normalize header cells: strip whitespace + common invisible chars.
+        headers = [_clean_header(h) for h in raw_header]
         log.info(
             "control_sheet_fetched",
+            spreadsheet_id=self._control_sheet_id,
             spreadsheet_title=sh.title,
             worksheet=ws.title,
-            row_count=len(rows),
-            headers=list(rows[0].keys()) if rows else None,
-            raw_header_row=raw_header,
-            raw_first_data_row=raw_first,
-            first_row_dict=rows[0] if rows else None,
+            row_count=len(data_rows),
+            headers_repr=[repr(h) for h in raw_header],
+            headers_clean=headers,
+            first_row_repr=[repr(c) for c in data_rows[0]] if data_rows else None,
         )
         out: dict[str, Campaign] = {}
         skipped = 0
-        for row in rows:
+        for row_values in data_rows:
+            row = dict(zip(headers, row_values))
             camp = Campaign.from_row(row)
             if camp is None:
                 skipped += 1
