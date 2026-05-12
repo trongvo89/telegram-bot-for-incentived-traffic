@@ -59,16 +59,39 @@ class CampaignsRegistry:
 
     def _fetch_sync(self) -> dict[str, Campaign]:
         client = self._build_client()
-        ws = client.open_by_key(self._control_sheet_id).worksheet(WORKSHEET_NAME)
+        sh = client.open_by_key(self._control_sheet_id)
+        ws = sh.worksheet(WORKSHEET_NAME)
         # gspread 6.x's expected_headers check is overly strict (it raises on
         # any whitespace/encoding diff). Campaign.from_row already tolerates
         # missing fields, so just take whatever row 1 declares as headers.
         rows = ws.get_all_records()
+        log.info(
+            "control_sheet_fetched",
+            spreadsheet_title=sh.title,
+            worksheet=ws.title,
+            row_count=len(rows),
+            headers=list(rows[0].keys()) if rows else None,
+            first_row_preview=(
+                {
+                    "campaign_name": rows[0].get("campaign_name"),
+                    "active": rows[0].get("active"),
+                    "active_type": type(rows[0].get("active")).__name__,
+                    "sheet_id_set": bool(rows[0].get("sheet_id")),
+                }
+                if rows
+                else None
+            ),
+        )
         out: dict[str, Campaign] = {}
+        skipped = 0
         for row in rows:
             camp = Campaign.from_row(row)
-            if camp is not None:
-                out[camp.name] = camp
+            if camp is None:
+                skipped += 1
+                continue
+            out[camp.name] = camp
+        if skipped:
+            log.warning("control_sheet_rows_skipped", skipped=skipped)
         return out
 
     async def _refresh(self) -> None:
