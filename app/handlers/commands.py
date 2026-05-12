@@ -74,7 +74,7 @@ async def cmd_help(message: Message) -> None:
 async def cmd_campaign(
     message: Message,
     command: CommandObject,
-    state: State,
+    app_state: State,
     campaigns: CampaignsRegistry,
 ) -> None:
     assert message.from_user is not None
@@ -85,7 +85,7 @@ async def cmd_campaign(
 
     arg_raw = (command.args or "").strip()
     if not arg_raw:
-        current = await state.get_campaign(user_id)
+        current = await app_state.get_campaign(user_id)
         if current:
             current_camp = await campaigns.get(current)
             if current_camp is not None:
@@ -118,14 +118,14 @@ async def cmd_campaign(
         )
         return
 
-    await state.set_campaign(user_id, camp.name)
+    await app_state.set_campaign(user_id, camp.name)
     await message.answer(_format_campaign_destination(camp), disable_web_page_preview=True)
 
 
 @router.message(Command("today"))
-async def cmd_today(message: Message, state: State) -> None:
+async def cmd_today(message: Message, app_state: State) -> None:
     assert message.from_user is not None
-    n = await state.count_uploads_today(message.from_user.id)
+    n = await app_state.count_uploads_today(message.from_user.id)
     await message.answer(f"📊 Hôm nay bạn đã upload <b>{n}</b> screenshot.")
 
 
@@ -156,12 +156,12 @@ async def cmd_reload(
 
 
 @router.message(Command("deadletter"))
-async def cmd_deadletter(message: Message, settings: Settings, state: State) -> None:
+async def cmd_deadletter(message: Message, settings: Settings, app_state: State) -> None:
     assert message.from_user is not None
     if message.from_user.id not in settings.super_admin_ids:
         await message.answer("⛔ Lệnh này chỉ dành cho super admin.")
         return
-    items = await state.list_dead_letter(limit=10, only_unresolved=True)
+    items = await app_state.list_dead_letter(limit=10, only_unresolved=True)
     if not items:
         await message.answer("✓ Không có dead-letter chưa xử lý.")
         return
@@ -180,7 +180,7 @@ async def cmd_resolve(
     message: Message,
     command: CommandObject,
     settings: Settings,
-    state: State,
+    app_state: State,
 ) -> None:
     assert message.from_user is not None
     if message.from_user.id not in settings.super_admin_ids:
@@ -192,7 +192,7 @@ async def cmd_resolve(
     except ValueError:
         await message.answer("Dùng <code>/resolve ID</code> với ID là số nguyên.")
         return
-    ok = await state.resolve_dead_letter(dl_id)
+    ok = await app_state.resolve_dead_letter(dl_id)
     if ok:
         await message.answer(f"✓ Đã đánh dấu dead-letter <code>#{dl_id}</code> resolved.")
     else:

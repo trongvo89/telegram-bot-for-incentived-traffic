@@ -67,7 +67,7 @@ async def on_photo(
     message: Message,
     bot: Bot,
     settings: Settings,
-    state: State,
+    app_state: State,
     campaigns: CampaignsRegistry,
     storage: ChannelStorage,
     ocr: VisionOCRClient,
@@ -79,7 +79,7 @@ async def on_photo(
     user = message.from_user
 
     # ---- campaign resolution ------------------------------------------
-    campaign_name = await state.get_campaign(user.id)
+    campaign_name = await app_state.get_campaign(user.id)
     if not campaign_name:
         active = await campaigns.list_active()
         await message.reply(
@@ -104,7 +104,7 @@ async def on_photo(
     photo = message.photo[-1]  # largest resolution
     file_unique_id = photo.file_unique_id
 
-    existing = await state.exists_upload(file_unique_id, camp.name)
+    existing = await app_state.exists_upload(file_unique_id, camp.name)
     if existing is not None:
         await message.reply(
             f"♻️ Ảnh này đã ghi nhận trước đó "
@@ -145,7 +145,7 @@ async def on_photo(
             error=str(forward_res),
             channel=camp.storage_channel_id,
         )
-        await state.push_dead_letter(
+        await app_state.push_dead_letter(
             payload=json.dumps(
                 {
                     "campaign": camp.name,
@@ -221,7 +221,7 @@ async def on_photo(
         log.warning("sheets_disabled_skipping_enqueue", campaign=camp.name)
 
     try:
-        await state.insert_upload(
+        await app_state.insert_upload(
             user_id=user.id,
             username=username or None,
             campaign=camp.name,

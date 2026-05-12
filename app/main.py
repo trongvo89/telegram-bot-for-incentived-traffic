@@ -102,7 +102,8 @@ async def run() -> None:
     notifier = Notifier(bot)
 
     dp["settings"] = settings
-    dp["state"] = state
+    # NOTE: must NOT be "state" — aiogram reserves that name for FSMContext.
+    dp["app_state"] = state
     dp["campaigns"] = campaigns
     dp["storage"] = storage
     dp["ocr"] = ocr
