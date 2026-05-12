@@ -151,22 +151,24 @@ Run tests:
 pytest -q
 ```
 
-### 4. Deploy (Fly.io)
+### 4. Deploy (Railway)
 
-```bash
-fly launch --no-deploy
-fly volumes create bot_data --size 1 --region sin
-fly secrets set BOT_TOKEN=... CONTROL_SHEET_ID=... SUPER_ADMIN_IDS=...
-fly secrets set GOOGLE_APPLICATION_CREDENTIALS_JSON="$(cat sa.json)"
-fly deploy
-```
+The repo auto-deploys from the connected branch — `git push` is the deploy
+command. One-time setup:
 
-Single shared-cpu-1x VM, 256MB RAM, 1GB persistent volume mounted at `/data`
-for the SQLite file. Long-poll worker so no public HTTPS endpoint needed.
+1. New project → **Deploy from GitHub repo** → pick this repo + branch.
+2. **Variables** tab — set the env vars from the `.env` table above.
+   `GOOGLE_APPLICATION_CREDENTIALS_JSON` holds the raw service-account JSON
+   blob; `app/main.py` materializes it to disk on boot.
+3. **Settings → Volumes** → **+ New Volume**, mount path `/data`, 1 GB.
+   Without this the SQLite file is wiped on every redeploy.
+4. Push to the deployed branch → Railway builds + restarts automatically.
+
+Long-poll worker, no public HTTPS endpoint needed (so no service domain).
 
 ### 5. Smoke test
 
-1. `fly logs` — expect `bot_started …`.
+1. Railway **Deploy Logs** — expect `bot_started …`.
 2. `/start` → greeting.
 3. `/campaign <valid_name>` → confirmation with sheet link; invalid → list of
    active campaigns.
@@ -177,7 +179,8 @@ for the SQLite file. Long-poll worker so no public HTTPS endpoint needed.
 7. `/deadletter` (super admin) → empty list on a healthy run.
 8. Kick bot from the storage channel, upload again → admin chat receives a
    dead-letter alert; `/deadletter` shows the entry; `/resolve <id>` clears it.
-9. `fly machine stop` / start → SQLite mapping survives.
+9. Trigger a redeploy on Railway → after restart, send `/campaign` (no arg).
+   The previously selected campaign should still be set → SQLite volume persists.
 
 ## Repo layout
 
@@ -202,7 +205,7 @@ app/
   utils/              structlog config, regex helpers
 migrations/           SQL migrations
 tests/                pytest unit tests (parser, state, campaigns, storage, ocr)
-Dockerfile / fly.toml
+Dockerfile           Railway builds from this; fly.toml kept as a fallback
 ```
 
 ## Cost ballpark (1k images/day = 30k/month)
@@ -211,9 +214,9 @@ Dockerfile / fly.toml
 |---|---|
 | Vision `document_text_detection` (after 1k/month free) | ~$43.5/mo |
 | Google Sheets API | $0 |
-| Fly.io shared-cpu-1x 256MB + 1GB volume | $0 (free tier) |
+| Railway hobby plan (512MB + 1GB volume) | ~$5/mo |
 | Telegram Bot API | $0 |
-| **Total** | **~$44/mo** |
+| **Total** | **~$49/mo** |
 
 Tips: resize >1600px screenshots before Vision; pre-filter < 50KB / non-image
 uploads; dedup short-circuits Vision entirely on retries.
