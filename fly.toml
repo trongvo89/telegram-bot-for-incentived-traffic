@@ -1,0 +1,27 @@
+app = "telegram-screenshot-bot"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  TZ = "Asia/Ho_Chi_Minh"
+  SQLITE_PATH = "/data/app.db"
+  LOG_LEVEL = "INFO"
+
+[[mounts]]
+  source = "bot_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpus = 1
+
+# Long-poll worker — no HTTP service. Keep the machine always running so
+# Telegram updates aren't missed.
+[deploy]
+  strategy = "immediate"
+
+[processes]
+  app = "python -m app.main"
