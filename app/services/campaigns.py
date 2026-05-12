@@ -7,7 +7,7 @@ from pathlib import Path
 import gspread
 from google.oauth2.service_account import Credentials
 
-from app.models.campaign import CONTROL_SHEET_HEADERS, Campaign
+from app.models.campaign import Campaign
 from app.utils.logging import get_logger
 
 log = get_logger("services.campaigns")
@@ -60,7 +60,10 @@ class CampaignsRegistry:
     def _fetch_sync(self) -> dict[str, Campaign]:
         client = self._build_client()
         ws = client.open_by_key(self._control_sheet_id).worksheet(WORKSHEET_NAME)
-        rows = ws.get_all_records(expected_headers=list(CONTROL_SHEET_HEADERS))
+        # gspread 6.x's expected_headers check is overly strict (it raises on
+        # any whitespace/encoding diff). Campaign.from_row already tolerates
+        # missing fields, so just take whatever row 1 declares as headers.
+        rows = ws.get_all_records()
         out: dict[str, Campaign] = {}
         for row in rows:
             camp = Campaign.from_row(row)
