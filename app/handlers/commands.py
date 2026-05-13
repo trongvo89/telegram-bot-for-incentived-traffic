@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from html import escape
+from zoneinfo import ZoneInfo
 
 from aiogram import Router
 from aiogram.filters import Command, CommandObject, CommandStart
@@ -34,6 +36,8 @@ HELP = (
     "\n"
     "<b>Cho admin</b>\n"
     "• <code>/reload</code> — nạp lại danh sách chiến dịch từ control sheet\n"
+    "• <code>/stats [day|month] [YYYY-MM-DD|YYYY-MM] [campaign]</code> — "
+    "leaderboard upload theo ngày/tháng\n"
     "• <code>/deadletter</code> — xem 10 lỗi gần nhất\n"
     "• <code>/resolve ID</code> — đánh dấu dead-letter đã xử lý"
 )
@@ -172,6 +176,125 @@ async def cmd_deadletter(message: Message, settings: Settings, app_state: State)
             f"<code>{escape(str(it['reason']))[:200]}</code>"
         )
     lines.append("\nDùng <code>/resolve ID</code> để đánh dấu đã xử lý.")
+    await message.answer("\n".join(lines))
+
+
+def _parse_stats_args(
+    raw: str, *, tz: ZoneInfo, now_local: datetime
+) -> tuple[datetime, datetime, str, str, str | None]:
+    """Return (start_local, end_local, period, label, campaign_filter).
+
+    Raises ValueError with a user-facing message on bad input.
+    """
+    args = raw.split()
+    period = "day"
+    date_arg: str | None = None
+    campaign: str | None = None
+
+    if args:
+        head = args[0].lower()
+        if head in ("day", "month"):
+            period = head
+            rest = args[1:]
+        else:
+            # No period specified — treat first arg as date or campaign.
+            rest = args
+        if rest:
+            cand = rest[0]
+            # Date-shaped tokens contain a digit + '-'; everything else is the
+            # campaign name. Letting "msb" through here means /stats msb works.
+            if "-" in cand and cand.replace("-", "").isdigit():
+                date_arg = cand
+                rest = rest[1:]
+            if rest:
+                campaign = rest[0]
+
+    if period == "day":
+        if date_arg:
+            day = datetime.strptime(date_arg, "%Y-%m-%d").replace(tzinfo=tz)
+        else:
+            day = now_local
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        label = start.strftime("%Y-%m-%d")
+    else:
+        if date_arg:
+            ym = datetime.strptime(date_arg, "%Y-%m").replace(tzinfo=tz)
+        else:
+            ym = now_local
+        start = ym.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
+        label = start.strftime("%Y-%m")
+    return start, end, period, label, campaign
+
+
+@router.message(Command("stats"))
+async def cmd_stats(
+    message: Message,
+    command: CommandObject,
+    settings: Settings,
+    app_state: State,
+) -> None:
+    assert message.from_user is not None
+    if message.from_user.id not in settings.super_admin_ids:
+        await message.answer("⛔ Lệnh này chỉ dành cho super admin.")
+        return
+
+    tz = ZoneInfo(settings.tz)
+    try:
+        start_local, end_local, period, label, campaign_filter = _parse_stats_args(
+            command.args or "", tz=tz, now_local=datetime.now(tz)
+        )
+    except ValueError:
+        await message.answer(
+            "Cú pháp: <code>/stats [day|month] [YYYY-MM-DD|YYYY-MM] [campaign]</code>\n"
+            "Ví dụ: <code>/stats</code>, <code>/stats month</code>, "
+            "<code>/stats day 2026-05-10 msb</code>"
+        )
+        return
+
+    start_utc = start_local.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S")
+    end_utc = end_local.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S")
+    rows = await app_state.stats_for_range(
+        start_utc=start_utc, end_utc=end_utc, campaign=campaign_filter
+    )
+
+    period_label = "ngày" if period == "day" else "tháng"
+    camp_label = (
+        f"campaign <code>{escape(campaign_filter)}</code>"
+        if campaign_filter else "tất cả campaign"
+    )
+    header = f"📊 <b>Stats {period_label} {label}</b> ({camp_label})"
+    if not rows:
+        await message.answer(f"{header}\nKhông có upload nào.")
+        return
+
+    total = sum(r["total"] for r in rows)
+    total_ok = sum(r["ok"] for r in rows)
+    total_partial = sum(r["partial"] for r in rows)
+    total_failed = sum(r["failed"] for r in rows)
+
+    lines = [
+        header,
+        f"Tổng: <b>{total}</b> (OK {total_ok}, PART {total_partial}, FAIL {total_failed})",
+        f"Publisher: <b>{len(rows)}</b>",
+        "",
+    ]
+    display = rows[:30]
+    for i, r in enumerate(display, start=1):
+        uname = f"@{r['username']}" if r["username"] else "(no username)"
+        lines.append(
+            f"{i}. <code>{escape(uname)}</code> "
+            f"(<code>{r['user_id']}</code>): "
+            f"<b>{r['total']}</b> "
+            f"(OK {r['ok']}, PART {r['partial']}, FAIL {r['failed']})"
+        )
+    if len(rows) > len(display):
+        lines.append(f"\n<i>... và {len(rows) - len(display)} publisher khác</i>")
+
     await message.answer("\n".join(lines))
 
 

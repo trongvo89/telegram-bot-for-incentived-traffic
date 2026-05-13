@@ -108,6 +108,45 @@ class State:
             row = await cur.fetchone()
         return int(row[0]) if row else 0
 
+    async def stats_for_range(
+        self,
+        *,
+        start_utc: str,
+        end_utc: str,
+        campaign: str | None = None,
+    ) -> list[dict]:
+        """Per-user upload counts in [start_utc, end_utc), with status breakdown.
+
+        Both bounds are UTC naive strings ("YYYY-MM-DD HH:MM:SS") to match how
+        SQLite stores CURRENT_TIMESTAMP. Rows are ordered by total desc.
+        """
+        assert self._conn is not None
+        params: list = [start_utc, end_utc]
+        sql = (
+            "SELECT user_id, MAX(username), COUNT(*), "
+            "SUM(CASE WHEN status='OK' THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN status='PARTIAL' THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) "
+            "FROM uploads WHERE created_at >= ? AND created_at < ? "
+        )
+        if campaign:
+            sql += "AND campaign = ? "
+            params.append(campaign)
+        sql += "GROUP BY user_id ORDER BY 3 DESC"
+        async with self._conn.execute(sql, tuple(params)) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "user_id": r[0],
+                "username": r[1],
+                "total": int(r[2]),
+                "ok": int(r[3] or 0),
+                "partial": int(r[4] or 0),
+                "failed": int(r[5] or 0),
+            }
+            for r in rows
+        ]
+
     # ---- dead-letter -----------------------------------------------------
 
     async def push_dead_letter(self, payload: str, reason: str) -> int:
