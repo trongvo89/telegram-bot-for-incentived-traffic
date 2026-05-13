@@ -14,6 +14,7 @@ from app.services.sheets import SheetsWriter
 from app.services.state import State
 from app.services.storage import ChannelStorage
 from app.utils.logging import configure_logging, get_logger
+from app.utils.media_group import MediaGroupBuffer
 
 
 def _materialize_sa_json() -> None:
@@ -100,6 +101,7 @@ async def run() -> None:
     )
     await sheets.start()
     notifier = Notifier(bot)
+    media_buffer = MediaGroupBuffer()
 
     dp["settings"] = settings
     # NOTE: must NOT be "state" — aiogram reserves that name for FSMContext.
@@ -109,6 +111,7 @@ async def run() -> None:
     dp["ocr"] = ocr
     dp["sheets"] = sheets
     dp["notifier"] = notifier
+    dp["media_buffer"] = media_buffer
 
     register_error_handler(dp)
     dp.include_router(commands_router)

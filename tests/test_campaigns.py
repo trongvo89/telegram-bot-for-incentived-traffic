@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from app.models.campaign import Campaign
+from app.models.campaign import (
+    CAMPAIGN_TYPE_MULTI_MSB,
+    CAMPAIGN_TYPE_SINGLE,
+    Campaign,
+)
 
 
 def test_from_row_full() -> None:
     row = {
         "campaign_name": "momo_summer",
         "active": "TRUE",
+        "campaign_type": "single",
         "sheet_id": "abc123",
         "worksheet": "data",
         "admin_chat_id": "-1001234567890",
@@ -20,6 +25,7 @@ def test_from_row_full() -> None:
     assert c is not None
     assert c.name == "momo_summer"
     assert c.active is True
+    assert c.campaign_type == CAMPAIGN_TYPE_SINGLE
     assert c.sheet_id == "abc123"
     assert c.worksheet == "data"
     assert c.admin_chat_id == -1001234567890
@@ -51,5 +57,22 @@ def test_from_row_inactive_defaults() -> None:
     c = Campaign.from_row(row)
     assert c is not None
     assert c.active is False
+    assert c.campaign_type == CAMPAIGN_TYPE_SINGLE
     assert c.worksheet == "data"
     assert c.admin_chat_id is None
+
+
+def test_from_row_multi_msb_type() -> None:
+    c = Campaign.from_row(
+        {"campaign_name": "msb_cityads", "sheet_id": "s", "campaign_type": "multi_msb"}
+    )
+    assert c is not None
+    assert c.campaign_type == CAMPAIGN_TYPE_MULTI_MSB
+
+
+def test_from_row_unknown_type_falls_back_to_single() -> None:
+    c = Campaign.from_row(
+        {"campaign_name": "x", "sheet_id": "s", "campaign_type": "typo_value"}
+    )
+    assert c is not None
+    assert c.campaign_type == CAMPAIGN_TYPE_SINGLE

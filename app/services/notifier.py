@@ -11,7 +11,7 @@ from html import escape
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 
-from app.models.parsed import ParsedData, UploadStatus
+from app.models.parsed import ParsedData, ParsedMultiMsb, UploadStatus
 from app.utils.logging import get_logger
 
 log = get_logger("services.notifier")
@@ -48,6 +48,44 @@ class Notifier:
         ]
         if screenshot_link:
             body_lines.append(f"<a href=\"{screenshot_link}\">Screenshot</a>")
+        text = "\n".join(body_lines)
+        try:
+            await self._bot.send_message(admin_chat_id, text, disable_web_page_preview=True)
+        except TelegramAPIError as exc:
+            log.warning(
+                "notify_admin_failed",
+                admin_chat_id=admin_chat_id,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+
+    async def notify_admin_multi_msb(
+        self,
+        *,
+        admin_chat_id: int | None,
+        campaign: str,
+        username: str | None,
+        user_id: int,
+        parsed: ParsedMultiMsb,
+        screenshot_links: list[str],
+    ) -> None:
+        if not admin_chat_id:
+            return
+        status_icon = "⚠" if parsed.status is UploadStatus.PARTIAL else "✗"
+        has_tx_label = (
+            "—" if parsed.has_transaction is None
+            else ("có" if parsed.has_transaction else "chưa")
+        )
+        body_lines = [
+            f"{status_icon} <b>{parsed.status.value}</b> — chiến dịch <code>{escape(campaign)}</code>",
+            f"User: <code>@{escape(username) if username else user_id}</code> ({user_id})",
+            f"Tên: {_fmt_value(parsed.customer_name)}",
+            f"Phone (login): {_fmt_value(parsed.phone)}",
+            f"Mã giới thiệu: {_fmt_value(parsed.referral_code)}",
+            f"Đã phát sinh GD: <code>{has_tx_label}</code>",
+        ]
+        for i, link in enumerate(screenshot_links, start=1):
+            body_lines.append(f"<a href=\"{link}\">Screenshot {i}</a>")
         text = "\n".join(body_lines)
         try:
             await self._bot.send_message(admin_chat_id, text, disable_web_page_preview=True)

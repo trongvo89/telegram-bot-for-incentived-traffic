@@ -77,20 +77,28 @@ materialize it to disk at `GOOGLE_APPLICATION_CREDENTIALS`.
 
 ### Control sheet — `campaigns` tab
 
-| campaign_name | active | sheet_id | worksheet | admin_chat_id | storage_channel_id | txid_regex | name_regex | phone_regex | notes |
-|---|---|---|---|---|---|---|---|---|---|
-| `msb` | `TRUE` | `1AbC…` | `data` | `-1001111111111` | `-1002222222222` | `MSB\d{12}` | `Người nhận:\s*(.+)` |  | first campaign |
+| campaign_name | active | campaign_type | sheet_id | worksheet | admin_chat_id | storage_channel_id | txid_regex | name_regex | phone_regex | notes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `msb` | `TRUE` | `single` | `1AbC…` | `data` | `-1001111111111` | `-1002222222222` | `MSB\d{12}` | `Người nhận:\s*(.+)` |  | single-screenshot flow |
+| `msb_cityads` | `TRUE` | `multi_msb` | `1XyZ…` | `data` | `-1001111111111` | `-1002222222222` |  |  |  | 3-screenshot album flow |
 
 - `active=TRUE` rows are the only ones a publisher can pick.
+- `campaign_type` is `single` (default, one screenshot per upload) or
+  `multi_msb` (publisher sends 3 MSB screenshots as a Telegram album:
+  account confirmation, account detail, info/transactions). Unknown values
+  degrade to `single`.
 - `worksheet` defaults to `data` if blank; the worksheet is auto-created on
   first append with the column headers below.
-- `txid_regex` / `name_regex` / `phone_regex` are optional. If the regex has
-  a capture group, the first group's value is used; otherwise the full match.
-- `phone_regex` falls back to a built-in VN mobile matcher.
+- `txid_regex` / `name_regex` / `phone_regex` are only used by `single`
+  campaigns. `multi_msb` parsing is hardcoded against the MSB app UI.
+- If a regex has a capture group, the first group's value is used; otherwise
+  the full match. `phone_regex` falls back to a built-in VN mobile matcher.
 - Bad regexes are ignored (logged + fallback used) so a typo in the sheet
   doesn't take the bot offline.
 
 ### Per-campaign data tab columns
+
+For `campaign_type=single`:
 
 ```
 timestamp | telegram_user_id | telegram_username | customer_name | phone |
@@ -99,6 +107,18 @@ transaction_id | screenshot_link | raw_ocr_text | status
 
 `status` is `OK` (all 3 fields parsed), `PARTIAL` (1–2 fields), or `FAILED`
 (0 fields / OCR failed).
+
+For `campaign_type=multi_msb`:
+
+```
+timestamp | telegram_user_id | telegram_username | customer_name | phone |
+referral_code | has_transaction | screenshot_link_account |
+screenshot_link_detail | screenshot_link_info | raw_ocr_text | status
+```
+
+`status` is `OK` (all 4 fields parsed AND `has_transaction=TRUE`), `PARTIAL`
+(some fields missing or no transaction yet), or `FAILED` (nothing parsed).
+`has_transaction` is `TRUE` / `FALSE` / blank.
 
 ### Regex examples
 

@@ -28,8 +28,9 @@ log = get_logger("services.sheets")
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# The fixed column layout written to each campaign's data tab.
-DATA_HEADERS = [
+# Column layouts written to each campaign's data tab. The single-screenshot
+# flow uses the legacy layout; the multi_msb album flow has its own schema.
+DATA_HEADERS_SINGLE = [
     "timestamp",
     "telegram_user_id",
     "telegram_username",
@@ -40,6 +41,23 @@ DATA_HEADERS = [
     "raw_ocr_text",
     "status",
 ]
+DATA_HEADERS_MULTI_MSB = [
+    "timestamp",
+    "telegram_user_id",
+    "telegram_username",
+    "customer_name",
+    "phone",
+    "referral_code",
+    "has_transaction",
+    "screenshot_link_account",
+    "screenshot_link_detail",
+    "screenshot_link_info",
+    "raw_ocr_text",
+    "status",
+]
+# Back-compat re-export for any external import; callers in this repo should
+# pass the explicit headers per AppendJob.
+DATA_HEADERS = DATA_HEADERS_SINGLE
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +65,9 @@ class AppendJob:
     sheet_id: str
     worksheet: str
     row: list[object]
+    # Headers used when seeding/creating the worksheet — different campaign
+    # types have different column layouts.
+    headers: list[str]
     # Carried through so a failure ends up in dead_letter with enough context
     # to manually replay.
     context: dict[str, object]
@@ -98,6 +119,7 @@ class SheetsWriter:
         sheet_id: str,
         worksheet: str,
         row: list[object],
+        headers: list[str],
         context: dict[str, object] | None = None,
     ) -> None:
         await self._queue.put(
@@ -105,6 +127,7 @@ class SheetsWriter:
                 sheet_id=sheet_id,
                 worksheet=worksheet,
                 row=row,
+                headers=headers,
                 context=context or {},
             )
         )
@@ -170,7 +193,9 @@ class SheetsWriter:
         self._client = gspread.authorize(creds)
         return self._client
 
-    def _get_worksheet(self, sheet_id: str, worksheet_name: str) -> gspread.Worksheet:
+    def _get_worksheet(
+        self, sheet_id: str, worksheet_name: str, headers: list[str]
+    ) -> gspread.Worksheet:
         key = (sheet_id, worksheet_name)
         cached = self._ws_cache.get(key)
         if cached is not None:
@@ -180,16 +205,16 @@ class SheetsWriter:
         try:
             ws = sh.worksheet(worksheet_name)
         except gspread.WorksheetNotFound:
-            ws = sh.add_worksheet(title=worksheet_name, rows=1000, cols=len(DATA_HEADERS))
-            ws.append_row(DATA_HEADERS, value_input_option="RAW")
+            ws = sh.add_worksheet(title=worksheet_name, rows=1000, cols=len(headers))
+            ws.append_row(headers, value_input_option="RAW")
         else:
             # If empty, seed headers so the sheet is self-describing.
             first = ws.row_values(1)
             if not first:
-                ws.append_row(DATA_HEADERS, value_input_option="RAW")
+                ws.append_row(headers, value_input_option="RAW")
         self._ws_cache[key] = ws
         return ws
 
     def _append_sync(self, job: AppendJob) -> None:
-        ws = self._get_worksheet(job.sheet_id, job.worksheet)
+        ws = self._get_worksheet(job.sheet_id, job.worksheet, job.headers)
         ws.append_row(job.row, value_input_option="USER_ENTERED")

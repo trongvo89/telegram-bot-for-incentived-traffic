@@ -9,6 +9,7 @@ def _camp(**overrides) -> Campaign:
     base = {
         "name": "alpha",
         "active": True,
+        "campaign_type": "single",
         "sheet_id": "s",
         "worksheet": "data",
         "admin_chat_id": None,
